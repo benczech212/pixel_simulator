@@ -1,0 +1,407 @@
+``` effect_controller.py import pygame
+import time
+import random
+import led_controller
+import app
+import effect_library
+
+
+
+default_color_speed = app.settings.get("default_color_speed", 0.1)
+tick_count = 0
+
+
+# Pygame setup
+pygame.init()
+screen_width, screen_height = app.settings.get("screen_width", 1920), app.settings.get("screen_height", 1920)
+pixel_count = app.settings.get("pixel_count", 1)
+box_width = screen_width // pixel_count
+box_height = app.settings.get("box_height",50)
+
+screen = pygame.display.set_mode((screen_width, screen_height))
+clock = pygame.time.Clock()
+
+# Information display variables
+font_info = pygame.font.Font(None, 36)
+info_y = screen_height + 100  # Adjusted position
+tick_count = 0
+
+# Create Pixels object
+pixel_manager = led_controller.Pixels(pixel_count,screen,screen_width)
+pixel_manager.set_box_dimensions(box_width, box_height)
+
+while True:
+    effect_choice = random.choice([
+        "rainbow",
+        #  "test_effect",
+        # "rest_effect"
+        ])
+
+    if effect_choice == "rainbow_cycle":
+        effect_library.rainbow_cycle(pixel_manager, speed=10)
+    elif effect_choice == "test_effect":
+        effect_library.test_effect(pixel_manager)
+    elif effect_choice == "rest_effect":
+        effect_library.rest_effect(pixel_manager, fade_out=False)
+    elif effect_choice == "rainbow":
+        effect_library.rainbow(pixel_manager, speed=1)
+    pixel_manager.show(screen)
+
+    # app.display_info_below(effect_choice, screen)
+
+    pygame.display.flip()
+    clock.tick(60)
+    pygame.time.delay(1000) ```
+
+
+``` led_controller.py import pygame
+import time
+import random
+import app
+
+class Pixel:
+    def __init__(self, pixel_id, color=(0, 0, 0), speed=0.1):
+        self.pixel_id = pixel_id
+        self.color = color
+        self.color_target = color
+        self.speed = speed
+
+    def draw(self, surface, box_width, box_height, screen_width):
+        rect = pygame.Rect(self.pixel_id * (screen_width // len(self.pixels)), 0, box_width, box_height)
+
+        # Fill background with black to erase old text
+        pygame.draw.rect(surface, (0, 0, 0), rect)
+
+        # Draw new pixel information
+        pygame.draw.rect(surface, self.color, rect)
+        pygame.draw.rect(surface, (50, 50, 50), rect, 2)  # Outline in gray
+        font = pygame.font.Font(None, int(20 * screen_width / 1920))  # Adjust the font size based on screen width
+
+        # Display pixel ID
+        text = font.render(str(self.pixel_id), True, (255, 255, 255))
+        text_rect = text.get_rect(center=(rect.centerx, box_height + int(20 * screen_width / 1920)))  # Adjust the position based on screen width
+
+        # Display pixel color, target color, and speed
+        text_color = font.render(f"Color: {self.color}", True, (255, 255, 255))
+        text_target_color = font.render(f"Target: {self.color_target}", True, (255, 255, 255))
+
+        # Round speed to 2 decimal places
+        rounded_speed = round(self.speed, 2)
+        text_speed = font.render(f"Speed: {rounded_speed}", True, (255, 255, 255))
+
+        text_color_rect = text_color.get_rect(center=(rect.centerx, box_height + int(40 * screen_width / 1920)))
+        text_target_color_rect = text_target_color.get_rect(center=(rect.centerx, box_height + int(60 * screen_width / 1920)))
+        text_speed_rect = text_speed.get_rect(center=(rect.centerx, box_height + int(80 * screen_width / 1920)))
+
+        # Draw black box to cover the old text
+        pygame.draw.rect(surface, (0, 0, 0), (rect.left, box_height + int(10 * screen_width / 1920), rect.width, int(90 * screen_width / 1920)))
+
+        surface.blit(text, text_rect)  # Display pixel ID
+        surface.blit(text_color, text_color_rect)
+        surface.blit(text_target_color, text_target_color_rect)
+        surface.blit(text_speed, text_speed_rect)
+
+
+
+    def get_color(self):
+        return self.color
+
+    def set_target(self,target):
+        self.color_target = target
+
+    def step_towards_target(self):
+        self.color = tuple(
+            int(current + (target - current) * self.speed) for current, target in zip(self.color, self.color_target)
+        )
+
+class Pixels:
+    def __init__(self, pixel_count, surface, screen_width):
+        speed_min, speed_max = app.settings.get('default_color_speed_min', 0.05), app.settings.get('default_color_speed_max', 0.05)
+        self.pixels = [Pixel(pixel_id=i, speed=random.uniform(speed_min, speed_max)) for i in range(pixel_count)]
+        self.box_width = 0
+        self.box_height = 0
+        self.surface = surface
+        self.screen_width = screen_width
+        self.pixel_count = pixel_count
+
+    def set_box_dimensions(self, box_width, box_height):
+        self.box_width = box_width
+        self.box_height = box_height
+
+    def clear(self):
+        for pixel in self.pixels:
+            pixel.color_target = (0, 0, 0)
+
+    def fill(self, color):
+        for pixel in self.pixels:
+            pixel.color_target = color
+
+    def show(self):
+        for pixel in self.pixels:
+            pixel.step_towards_target()
+            pixel.draw(self.surface, self.box_width, self.box_height, self.screen_width)
+
+
+    def get_colors(self):
+        return [pixel.get_color() for pixel in self.pixels]
+
+    def random_speeds(self,min=app.settings.get('default_color_speed_min',0.05),max=app.settings.get('default_color_speed_max',0.2)):
+        for pixel in self.pixels:
+            pixel.speed = random.uniform(min,max)
+
+    def print_info(self):
+        print("Pixel Colors:")
+        for i, color in enumerate(self.get_colors()):
+            print(f"Pixel {i}: {color}")
+
+    def fade_to_colors(self, new_colors, fade_duration):
+        start_time = time.monotonic()
+        current_colors = self.get_colors()
+        while time.monotonic() - start_time < fade_duration:
+            elapsed_time = time.monotonic() - start_time
+            ratio = elapsed_time / fade_duration
+            interpolated_colors = [
+                tuple(int(current + (new - current) * ratio) for current, new in zip(current_colors[i], new_colors[i]))
+                for i in range(len(current_colors))
+            ]
+            for pixel, color in zip(self.pixels, interpolated_colors):
+                pixel.set_target(color)
+
+            pygame.display.flip()
+            # pygame.time.delay(10)
+
+ ```
+
+
+``` effect_library.py import pygame
+import time
+import random
+import led_controller
+import app
+
+DEFAULT_EFFECT_DURATION_MIN = app.settings.get('default_effect_duration_min',5)
+DEFAULT_EFFECT_DURATION_MAX = app.settings.get('default_effect_duration_max',5)
+
+screen = pygame.display.set_mode((app.settings["screen_width"], app.settings["screen_height"]))
+
+tick_count = 0
+
+
+
+# Function to smoothly fade to a new color
+def fade_to_color(pixels, new_color, effect_duration=random.randint(DEFAULT_EFFECT_DURATION_MIN, DEFAULT_EFFECT_DURATION_MAX)):
+    start_time = time.monotonic()
+    while time.monotonic() - start_time < effect_duration:
+        app.handle_quit_event()
+
+        elapsed_time = time.monotonic() - start_time
+        ratio = elapsed_time / effect_duration
+        pixels.fade_to_colors([new_color] * len(pixels.pixels), effect_duration)  # Fade to new color
+
+        pixels.show(screen)
+
+        # Display information
+        app.display_info_below("Fade to Color", effect_duration, elapsed_time, screen)
+
+        pygame.display.flip()
+        pygame.time.delay(10)  # Added a slight delay to improve performance
+
+
+# Function for test effect
+def test_effect(pixels,colors=[(255, 0, 0), (0, 255, 0), (0, 0, 255)], effect_duration=random.randint(DEFAULT_EFFECT_DURATION_MIN, DEFAULT_EFFECT_DURATION_MAX)):
+    start_time = time.monotonic()
+
+    while time.monotonic() - start_time < effect_duration:
+        app.handle_quit_event()
+
+        elapsed_time = time.monotonic() - start_time
+        current_color_index = int(elapsed_time) % len(colors)
+        pixels.fill(colors[current_color_index])
+
+        pixels.show(screen)
+
+        # Display information below the pixels
+        app.display_info_below("Test Effect", effect_duration, elapsed_time, screen)
+
+        pygame.display.flip()
+        pygame.time.delay(10)  # Added a slight delay to improve performance
+
+# Function for rest effect
+def rest_effect(pixels, fade_out=False, effect_duration=random.randint(DEFAULT_EFFECT_DURATION_MIN, DEFAULT_EFFECT_DURATION_MAX)):
+    start_time = time.monotonic()
+
+    while time.monotonic() - start_time < effect_duration:
+        app.handle_quit_event()
+
+        elapsed_time = time.monotonic() - start_time
+
+        if fade_out:
+            fade_ratio = min(1, elapsed_time / effect_duration)  # Ensure fade_ratio doesn't exceed 1
+            pixels.fade_to
+
+
+def rainbow_cycle(pixels, speed=1, effect_duration=random.randint(DEFAULT_EFFECT_DURATION_MIN, DEFAULT_EFFECT_DURATION_MAX)):
+    global tick_count
+    start_time = time.monotonic()
+    while time.monotonic() - start_time < effect_duration:
+        app.handle_quit_event()  # Check for quit event
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                exit()
+
+        elapsed_time = time.monotonic() - start_time
+
+        colors = [app.wheel(int((i / pixels.pixel_count * 255 + tick_count * speed) % 255)) for i in range(pixels.pixel_count)]
+        tick_count += 1
+        if tick_count % 5 == 0:
+            pixels.fade_to_colors(colors, 0.5)  # Slower transition for smoother effect
+
+            pixels.show(screen)
+
+        # Display information below the pixels
+        app.display_info_below("Rainbow Cycle", effect_duration, elapsed_time,screen)
+
+        pygame.display.flip()
+        pygame.time.delay(10)  # Added a slight delay to improve performance
+        
+def rainbow(pixels, speed=1, effect_duration=5):
+    speed *= 8 # multiply by some amount to scale this value up
+    start_time = time.monotonic()
+    while time.monotonic() - start_time < effect_duration:
+        app.handle_quit_event()
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                exit()
+
+        elapsed_time = time.monotonic() - start_time
+        time.monotonic()
+        # Calculate color based on time and speed
+        time_inc = time.monotonic() * speed * 8
+        hues = []
+        for pixel_id in range(pixels.pixel_count):
+            pix_inc = pixel_id * 8
+            hues.append(int(time_inc + pix_inc) % 360)
+
+        colors = [app.hsv_to_rgb(hue, 100, 100) for hue in hues]
+        pixels.fade_to_colors(colors,0.01)
+        # pixels.fill(color)
+        pixels.show()
+
+        # Display information below the pixels
+        app.display_info_below("Rainbow", effect_duration, elapsed_time,screen)
+
+        pygame.display.flip()
+        pygame.time.delay(10)  # Added a slight delay to improve performance
+ ```
+
+
+``` app.py import json
+import pygame
+import sys
+import os
+
+# Load settings from settings.json
+with open("settings.json") as settings_file:
+    settings = json.load(settings_file)
+
+# Set the display to the second monitor
+os.environ['SDL_VIDEO_WINDOW_POS'] = f"{settings['screen_width']} , 0"
+
+# Pygame setup
+pygame.init()
+
+# Create the screen on the second monitor
+screen_width, screen_height = settings.get("screen_width", 1920), settings.get("screen_height", 1920)
+screen = pygame.display.set_mode((screen_width, screen_height))
+
+
+# Function to display information below the pixels
+def display_info_below(effect_name, total_duration, elapsed_time, screen):
+    font_info_below = pygame.font.Font(None, 36)
+    info_text = f"Effect: {effect_name} | Total Duration: {total_duration:.2f}s | Elapsed Time: {elapsed_time:.2f}s"
+    text_surface = font_info_below.render(info_text, True, (255, 255, 255))
+    text_rect = text_surface.get_rect(center=(screen.get_width() // 2, screen.get_height() + 50))
+    screen.blit(text_surface, text_rect)
+
+def handle_quit_event():
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            pygame.quit()
+            sys.exit()
+def wheel(pos):
+    if pos < 85:
+        return (pos * 3, 255 - pos * 3, 0)
+    elif pos < 170:
+        pos -= 85
+        return (255 - pos * 3, 0, pos * 3)
+    else:
+        pos -= 170
+        return (0, pos * 3, 255 - pos * 3)
+def hsv_to_rgb(h, s, v):
+    h /= 360
+    s /= 100
+    v /= 100
+    i = int(h * 6)
+    f = (h * 6) - i
+    p = v * (1 - s)
+    q = v * (1 - f * s)
+    t = v * (1 - (1 - f) * s)
+    if i % 6 == 0:
+        r, g, b = v, t, p
+    elif i % 6 == 1:
+        r, g, b = q, v, p
+    elif i % 6 == 2:
+        r, g, b = p, v, t
+    elif i % 6 == 3:
+        r, g, b = p, q, v
+    elif i % 6 == 4:
+        r, g, b = t, p, v
+    else:
+        r, g, b = v, p, q
+    return int(r * 255), int(g * 255), int(b * 255)
+
+
+def rgb_to_hsv(r, g, b):
+    r, g, b = r / 255.0, g / 255.0, b / 255.0
+    mx = max(r, g, b)
+    mn = min(r, g, b)
+    df = mx - mn
+    if mx == mn:
+        h = 0
+    elif mx == r:
+        h = (60 * ((g - b) / df) + 360) % 360
+    elif mx == g:
+        h = (60 * ((b - r) / df) + 120) % 360
+    elif mx == b:
+        h = (60 * ((r - g) / df) + 240) % 360
+    if mx == 0:
+        s = 0
+    else:
+        s = (df / mx) * 100
+    v = mx * 100
+    return int(h), int(s), int(v)
+
+
+def lerp(a, b, t):
+    return a + (b - a) * t
+
+
+def lerp_rgb(color1, color2, t):
+    r = int(lerp(color1[0], color2[0], t))
+    g = int(lerp(color1[1], color2[1], t))
+    b = int(lerp(color1[2], color2[2], t))
+    return r, g, b
+
+
+def lerp_hsv_from_rgb(rgb1, rgb2, t):
+    hsv1 = rgb_to_hsv(*rgb1)
+    hsv2 = rgb_to_hsv(*rgb2)
+    lerped_hsv = (lerp(hsv1[0], hsv2[0], t), lerp(hsv1[1], hsv2[1], t), lerp(hsv1[2], hsv2[2], t))
+    lerped_rgb = hsv_to_rgb(*lerped_hsv)
+    return lerped_rgb ```
+
+

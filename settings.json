@@ -1,0 +1,11 @@
+{
+    "pixel_count": 10,
+    "default_effect_duration_min": 5,
+    "default_effect_duration_max": 15,
+    "default_color_speed_min": 0.05,
+    "default_color_speed_max": 0.2,
+    "screen_width": 1920,
+    "screen_height": 1080,
+    "simulated_pixel_height": 50
+  }
+  
